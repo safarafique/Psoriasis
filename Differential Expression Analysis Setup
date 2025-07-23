@@ -1,0 +1,24 @@
+# Create the Design Matrix for Linear Model
+design <- model.matrix(~ group, data = sample_info)
+
+# Define the Groups to Compare
+group1 <- "Disease"
+group2 <- "Normal"
+
+# Ensure the groups exist in the data
+if (!(group1 %in% levels(sample_info$group)) || !(group2 %in% levels(sample_info$group))) {
+  stop("Specified groups not found.")
+}
+
+# Create the Contrast Matrix
+contrast_matrix <- makeContrasts(paste(group1, "-", group2), levels = design)
+
+# Perform Differential Expression Analysis
+fit <- lmFit(expr_corrected, design)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+results <- topTable(fit2, adjust.method = "fdr", number = Inf)
+
+# Save the Results
+write.table(results, "differential_expression_results.tsv", sep = "\t", quote = FALSE, row.names = TRUE)
+cat("Differential expression analysis complete. Results saved.\n")
