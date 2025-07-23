@@ -1,0 +1,71 @@
+# Load the necessary library for Volcano Plot
+library(EnhancedVolcano)
+
+# Initialize lists for storing group and sample information
+group_list <- list()
+sample_names_list <- list()
+
+# Map GSE datasets to the phenotype group column
+gse_group_column_map <- list(
+  GSE182740 = "disease:ch1",
+  GSE32407  = "disease state:ch1",
+  GSE47598  = "group:ch1"
+)
+
+# Extract group information from the phenotype data for each dataset
+for (gse in c("GSE182740", "GSE32407", "GSE47598")) {
+  gse_data <- getGEO(gse, GSEMatrix = TRUE)
+  pdata <- pData(gse_data[[1]])
+  
+  # Ensure sample names are in the same order as the expression data
+  samples_in_expr <- colnames(expr_list_common[[gse]])
+  pdata <- pdata[samples_in_expr, , drop = FALSE]
+  
+  group_col <- gse_group_column_map[[gse]]
+  if (group_col %in% colnames(pdata)) {
+    group_info <- as.character(pdata[[group_col]])
+    group_list[[gse]] <- trimws(group_info)
+    sample_names_list[[gse]] <- samples_in_expr
+  }
+}
+
+# Combine all group information and ensure alignment with expression data
+group_vector <- unlist(group_list)
+sample_names <- unlist(sample_names_list)
+
+# Ensure sample names match
+if (!all(sample_names == colnames(expr_corrected))) stop("Sample names do not match.")
+
+# Create a sample information dataframe
+sample_info <- data.frame(
+  sample = colnames(expr_corrected),
+  batch = batch,
+  group = factor(group_vector)
+)
+
+# Clean up group names
+levels(sample_info$group) <- make.names(levels(sample_info$group))
+
+# Simplify group names for easier interpretation
+normal_groups <- c("healthy", "healthy.control", "Normal_skin", "control", "Healthy.Control")
+disease_group <- c("plaque.type.psoriasis", "psoriasis", "Psoriasis.Patient")
+
+# Map groups to 'Normal' or 'Disease'
+sample_info$group <- factor(sample_info$group, levels = c(normal_groups, disease_group))
+levels(sample_info$group)[sample_info$group %in% normal_groups] <- "Normal"
+levels(sample_info$group)[!(sample_info$group %in% normal_groups)] <- "Disease"
+
+# Remove groups with very few samples
+group_counts <- table(sample_info$group)
+sample_info <- sample_info[sample_info$group %in% names(group_counts[group_counts >= 2]), ]
+expr_corrected <- expr_corrected[, sample_info$sample]
+
+# Update factor levels after subsetting
+sample_info$group <- droplevels(sample_info$group)
+
+# Final check on the number of levels
+if (nlevels(sample_info$group) < 2) stop("Not enough groups for differential expression analysis.")
+
+# Print the final distribution of group levels
+cat("Updated group levels and sample counts:\n")
+print(table(sample_info$group))
