@@ -1,0 +1,56 @@
+# GEO Expression Data Processing Pipeline
+
+# Set timeout for large downloads
+options(timeout = 150000)
+
+# List of GSE numbers with corresponding GSE names
+gse_data_info <- list(
+  "GSE182740" = "Dataset_1_Name", 
+  "GSE32407" = "Dataset_2_Name",
+  "GSE47598" = "Dataset_3_Name"
+)
+
+# Initialize lists
+expr_list <- list()
+skip_reasons <- list()
+
+# Loop over each GSE number
+for (gse in names(gse_data_info)) {
+  
+  # Get the corresponding GSE name
+  gse_name <- gse_data_info[[gse]]
+  
+  cat("\nProcessing:", gse_name, "(", gse, ")...\n")
+  
+  # Download and process the dataset
+  gse_data <- tryCatch({
+    getGEO(gse, GSEMatrix = TRUE)
+  }, error = function(e) {
+    skip_reasons[[gse]] <- "Download error"
+    return(NULL)
+  })
+  
+  if (is.null(gse_data)) next
+  
+  expr_set <- gse_data[[1]]
+  
+  # Check if expression data is available
+  if (nrow(exprs(expr_set)) == 0) next
+  
+  expr_matrix <- exprs(expr_set)
+  platform_id <- annotation(expr_set)
+  
+  # Platform-specific annotation (generalized example)
+  gene_symbols <- NULL
+  if (platform_id == "GPLXXXX") {
+    gene_symbols <- rownames(expr_matrix)  # Example, replace with actual annotation
+  }
+  
+  if (length(gene_symbols) == 0) next
+  
+  # Clean gene symbols and aggregate data
+  expr_matrix <- expr_matrix[gene_symbols != "", ]
+  expr_list[[gse_name]] <- expr_matrix
+}
+
+
