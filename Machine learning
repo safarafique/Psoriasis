@@ -1,0 +1,61 @@
+# ========================================================
+# 1. Preprocess Expression Data
+# ========================================================
+x <- as.matrix(extracted_data)  # Convert expression data to matrix (samples x genes)
+
+# ========================================================
+# 2. Prepare Sample Information
+# ========================================================
+rownames(sample_info) <- sample_info$sample
+common_samples <- intersect(rownames(x), rownames(sample_info))
+x <- x[common_samples, ]
+sample_info <- sample_info[common_samples, ]
+
+# Create class label vector (Disease = 1, Control = 0)
+y <- as.factor(ifelse(sample_info$group == "Disease", 1, 0))
+
+# ========================================================
+# 3. LASSO Model for Feature Selection (cv.glmnet)
+# ========================================================
+library(glmnet)
+cv_fit <- cv.glmnet(x, y, alpha = 1, family = "binomial")  # Perform LASSO
+cat("Best lambda for LASSO:", cv_fit$lambda.min, "\n")
+
+# Get non-zero coefficients from LASSO
+lasso_coef <- coef(cv_fit, s = "lambda.min")
+lasso_genes <- rownames(lasso_coef)[lasso_coef != 0]
+cat("LASSO selected genes:", lasso_genes, "\n")
+
+# ========================================================
+# 4. Random Forest (RF) for Feature Importance
+# ========================================================
+library(randomForest)
+rf_model <- randomForest(x, y, ntree = 500)
+rf_importance <- importance(rf_model)  # Get feature importance
+rf_genes <- rownames(rf_importance)[order(-rf_importance[, 1])[1:20]]  # Top 20 important genes
+cat("Top 20 RF genes:", rf_genes, "\n")
+
+# ========================================================
+# 5. SVM-RFE for Feature Selection
+# ========================================================
+library(e1071)
+svm_rfe <- function(X, y, k_fold = 5) {
+  folds <- createFolds(y, k = k_fold)
+  feature_scores <- numeric(ncol(X))
+  for (fold in folds) {
+    train_X <- X[-fold, ]
+    train_y <- y[-fold]
+    model <- ksvm(train_X, train_y, kernel = "vanilladot")
+    weights <- abs(t(model@coef[[1]]) %*% model@xmatrix[[1]])
+    feature_scores <- feature_scores + weights
+  }
+  
+  avg_scores <- feature_scores / k_fold
+  ranked_features <- order(avg_scores, decreasing = TRUE)
+  return(ranked_features)
+}
+
+# Run SVM-RFE to rank features
+svm_ranking <- svm_rfe(x, y)
+top_20_svm_genes <- colnames(x)[svm_ranking][1:20]
+cat("Top 20 SVM-RFE genes:", top_20_svm_genes, "\n")
