@@ -1,0 +1,36 @@
+# Subset expression matrices to common genes
+expr_list_common <- lapply(expr_list, function(expr_matrix) {
+  expr_matrix[common_genes, , drop = FALSE]
+})
+
+# Combine the expression data into a single matrix
+expr_combined <- do.call(cbind, expr_list_common)
+
+# Create batch information based on dataset names
+batch <- factor(rep(names(expr_list_common), sapply(expr_list_common, ncol)))
+
+# Log2 transformation
+expr_combined_log <- log2(expr_combined + 1)
+
+# Remove batch effects using limma's removeBatchEffect
+expr_corrected <- removeBatchEffect(expr_combined_log, batch = batch)
+
+# Save the batch-corrected expression data
+write.table(expr_corrected, "batch_corrected_expression.tsv", sep = "\t", quote = FALSE, row.names = TRUE)
+
+# PCA before and after batch effect removal
+pca_before <- prcomp(t(expr_combined), scale. = TRUE)
+pca_after <- prcomp(t(expr_corrected), scale. = TRUE)
+
+# Save PCA plots before and after batch effect removal
+png("PCA_before_batch_correction.png", width = 800, height = 600)
+plot(pca_before$x[, 1], pca_before$x[, 2], col = batch, pch = 19, xlab = "PC1", ylab = "PC2", main = "PCA Before Batch Effect Correction")
+legend("topright", legend = levels(batch), col = 1:length(levels(batch)), pch = 19)
+dev.off()
+
+png("PCA_after_batch_correction.png", width = 800, height = 600)
+plot(pca_after$x[, 1], pca_after$x[, 2], col = batch, pch = 19, xlab = "PC1", ylab = "PC2", main = "PCA After Batch Effect Correction")
+legend("topright", legend = levels(batch), col = 1:length(levels(batch)), pch = 19)
+dev.off()
+
+cat("Batch effect removal complete. Corrected data saved and PCA plots created.\n")
