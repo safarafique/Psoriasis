@@ -1,0 +1,59 @@
+
+# Load libraries
+library(STRINGdb)
+library(igraph)
+library(RCy3)
+library(RCurl)
+library(XML)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(dplyr)
+
+# 2. Increase Timeout for STRINGdb Interaction
+options(timeout = 600)  # Increase timeout for STRINGdb query
+
+# 3. Validate Gene SYMBOLs Against org.Hs.eg.db
+valid_genes <- common_genes[common_genes %in% keys(org.Hs.eg.db, keytype = "SYMBOL")]
+
+# 4. Initialize STRINGdb and Map SYMBOLs to STRING IDs
+string_db <- STRINGdb$new(version = "11.5", species = 9606, score_threshold = 400)
+mapped_genes <- string_db$map(data.frame(SYMBOL = valid_genes), "SYMBOL", removeUnmappedRows = TRUE)
+
+# 5. Retrieve PPI Interactions from STRINGdb
+valid_ids <- na.omit(mapped_genes$STRING_id)
+interactions <- string_db$get_interactions(valid_ids)
+
+# 6. Create PPI Network Using igraph
+ppi_network <- graph_from_data_frame(d = interactions[, c("from", "to")], directed = FALSE)
+
+# 7. Map STRING IDs to SYMBOLs for Node Labeling
+id_to_gene <- distinct(mapped_genes %>% select(STRING_id, SYMBOL))
+id_map <- setNames(id_to_gene$SYMBOL, id_to_gene$STRING_id)
+V(ppi_network)$name <- id_map[V(ppi_network)$name]
+
+# 8. Connect to Cytoscape and Create Network
+cytoscapePing()  # Check if Cytoscape is running
+nodes <- data.frame(id = V(ppi_network)$name)
+edges <- as_data_frame(ppi_network, what = "edges")
+colnames(edges) <- c("source", "target")
+createNetworkFromDataFrames(nodes = nodes, edges = edges, title = "Full_PPI_Network", collection = "PPI_Collection")
+
+# 9. Apply Layout and Save Cytoscape Session
+layoutNetwork("force-directed")
+saveSession("Full_PPI_Network_Session.cys")
+
+cat("✅ Full PPI network created in Cytoscape.\n")
+
+# 10. Identify Interacting Genes
+all_mapped_genes <- unique(mapped_genes$SYMBOL)
+interacting_genes <- V(ppi_network)$name
+non_interacting_genes <- setdiff(all_mapped_genes, interacting_genes)
+
+# Save Results
+write.csv(interacting_genes, "Interacting_Genes.csv", row.names = FALSE)
+write.csv(non_interacting_genes, "Non_Interacting_Genes.csv", row.names = FALSE)
+
+cat("📊 Summary:\n")
+cat("Mapped genes:", length(all_mapped_genes), "\n")
+cat("Genes with interactions:", length(interacting_genes), "\n")
+cat("Genes with NO interactions:", length(non_interacting_genes), "\n")
