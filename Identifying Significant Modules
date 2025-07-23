@@ -1,0 +1,109 @@
+################################################################################
+# 1. IDENTIFY SIGNIFICANT MODULES (CORRELATION & P-VALUE BASED)
+################################################################################
+
+# Thresholds
+p_value_threshold <- 0.05
+cor_threshold <- 0.3
+
+# Initialize lists for positive and negative significant modules
+significant_modules <- list(positive = c(), negative = c())
+
+# Loop through each module and check if it meets the thresholds
+for (module in rownames(moduleTraitPvalue)) {
+  pval <- moduleTraitPvalue[module, 1]
+  corval <- moduleTraitCor[module, 1]
+  if (!is.na(pval) && !is.na(corval) && pval < p_value_threshold) {
+    if (corval > cor_threshold) significant_modules$positive <- c(significant_modules$positive, module)
+    if (corval < -cor_threshold) significant_modules$negative <- c(significant_modules$negative, module)
+  }
+}
+
+# Remove "ME" prefix for display
+positive_modules_display <- sub("^ME", "", significant_modules$positive)
+negative_modules_display <- sub("^ME", "", significant_modules$negative)
+
+# Display significant modules
+cat("\n--- Significant Modules Identified ---\n")
+cat("Positive Modules:", paste(positive_modules_display, collapse = ", "), "\n")
+cat("Negative Modules:", paste(negative_modules_display, collapse = ", "), "\n")
+
+################################################################################
+# 2. COMPILE MODULE INFORMATION
+################################################################################
+
+# Compile module information into a data frame
+module_results <- list(
+  positive = if (length(positive_modules_display) > 0) {
+    data.frame(Module = positive_modules_display,
+               Correlation = moduleTraitCor[positive_modules_display, 1],
+               Pvalue = moduleTraitPvalue[positive_modules_display, 1],
+               Type = "Positive", stringsAsFactors = FALSE)
+  } else NULL,
+  negative = if (length(negative_modules_display) > 0) {
+    data.frame(Module = negative_modules_display,
+               Correlation = moduleTraitCor[negative_modules_display, 1],
+               Pvalue = moduleTraitPvalue[negative_modules_display, 1],
+               Type = "Negative", stringsAsFactors = FALSE)
+  } else NULL
+)
+
+# Combine results
+all_modules <- do.call(rbind, module_results)
+rownames(all_modules) <- NULL
+
+################################################################################
+# 3. GENE EXTRACTION FROM MODULES
+################################################################################
+
+if (!is.null(all_modules)) {
+  cat("\n--- Gene Extraction ---\n")
+  module_genes <- lapply(all_modules$Module, function(me) {
+    colnames(datExpr)[moduleColors == sub("^ME", "", me)]
+  })
+  names(module_genes) <- all_modules$Module
+  all_modules$GeneCount <- sapply(module_genes, length)
+  print(all_modules[, c("Module", "GeneCount", "Correlation", "Pvalue")])
+  
+  # Save results
+  write.csv(all_modules, "significant_modules.csv", row.names = FALSE)
+  saveRDS(module_genes, "module_gene_lists.rds")
+}
+
+################################################################################
+# 4. VISUALIZATION
+################################################################################
+
+if (!is.null(all_modules)) {
+  cat("\n--- Generating Visualizations ---\n")
+  pdf("module_analysis_plots.pdf", width = 11, height = 8)
+  
+  # Plot 1: Barplot of -log10(p-value)
+  barplot(-log10(all_modules$Pvalue),
+          names.arg = all_modules$Module,
+          col = ifelse(all_modules$Type == "Positive", "red3", "blue3"),
+          las = 2, ylab = "-log10(p-value)",
+          main = "Module Significance")
+  abline(h = -log10(p_value_threshold), col = "gray50", lty = 2)
+  
+  # Plot 2: Module-Trait correlation heatmap
+  cor_matrix <- moduleTraitCor[all_modules$Module, , drop = FALSE]
+  pheatmap(cor_matrix,
+           color = colorRampPalette(c("blue", "white", "red"))(50),
+           display_numbers = TRUE,
+           main = "Module-Trait Correlations",
+           cluster_rows = TRUE,
+           cluster_cols = FALSE)
+  
+  # Plot 3: Correlation vs Gene Count
+  plot(all_modules$Correlation, all_modules$GeneCount,
+       pch = 16, col = ifelse(all_modules$Type == "Positive", "red3", "blue3"),
+       xlab = "Module-Trait Correlation", ylab = "Number of Genes",
+       main = "Module Size vs Correlation")
+  text(all_modules$Correlation, all_modules$GeneCount,
+       labels = all_modules$Module, pos = 3, cex = 0.7)
+  abline(v = 0, col = "gray50")
+  
+  dev.off()
+  cat("Saved: module_analysis_plots.pdf\n")
+}
