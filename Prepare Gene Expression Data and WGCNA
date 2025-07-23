@@ -1,0 +1,87 @@
+# Combine Expression Data from All Studies
+combined_expr <- do.call(cbind, expr_list_common)  # Combine expression matrices from different studies
+
+# Transpose the combined expression matrix to match WGCNA format (genes as columns, samples as rows)
+datExpr <- as.data.frame(t(combined_expr))
+
+# Alternatively, if expr_corrected is already processed, you can transpose it directly
+datExpr <- as.data.frame(t(expr_corrected))
+
+# Ensure the resulting data is in the correct format
+datExpr <- as.data.frame(datExpr)
+
+# Write the datExpr data frame to a CSV file
+write.csv(datExpr, file = "datExpr.csv", row.names = TRUE)
+
+# Write the sample_info data frame (metadata) to a CSV file
+write.csv(sample_info, "sample_info.csv", row.names = FALSE)
+
+cat("Files 'datExpr.csv' and 'sample_info.csv' have been saved successfully.\n")
+############################################################################################
+# Load required libraries
+library(WGCNA)
+library(parallel)
+library(RColorBrewer)
+library(pheatmap)
+library(gplots)
+
+# Step 1: Quality Control - Remove Bad Samples and Genes
+gsg <- goodSamplesGenes(datExpr, verbose = 3)
+if (!gsg$allOK) {
+  datExpr <- datExpr[gsg$goodSamples, gsg$goodGenes]
+}
+
+# Step 2: Sample Clustering to Detect Outliers
+sampleTree <- hclust(dist(datExpr), method = "average")
+
+# Save dendrogram as PNG
+png("gene_dendrogram.png", width = 1200, height = 800)
+plot(sampleTree, main = "Sample Clustering to Detect Outliers", ylab = "Height", lwd = 2, cex = 0.6)
+dev.off()
+
+# Step 3: Pick Soft Threshold Power for Network Construction
+powers <- c(1:20)
+sft <- pickSoftThreshold(datExpr, powerVector = powers, verbose = 5)
+softPower <- 6  # Chosen power
+
+# Step 4: Construct Adjacency and TOM Matrix
+adjacency <- adjacency(datExpr, power = softPower)
+TOM <- TOMsimilarity(adjacency)
+dissTOM <- 1 - TOM
+
+# Step 5: Gene Clustering and Module Detection
+geneTree <- hclust(as.dist(dissTOM), method = "average")
+dynamicMods <- cutreeDynamic(dendro = geneTree, distM = dissTOM, deepSplit = 2)
+dynamicColors <- labels2colors(dynamicMods)
+
+# Step 6: Plot Dendrogram with Module Colors
+plotDendroAndColors(geneTree, dynamicColors, main = "Gene Dendrogram and Module Colors")
+
+# Step 7: Save Module Detection Results
+save(dynamicMods, file = "WGCNA_dynamicMods.RData")
+save(dynamicColors, file = "WGCNA_dynamicColors.RData")
+
+# Step 8: Module Eigengene Calculation and Visualization
+MEs <- moduleEigengenes(datExpr, dynamicColors)$eigengenes
+write.csv(MEs, "module_eigengenes.csv", row.names = TRUE)
+
+# Step 9: Module-Trait Correlation Analysis
+sample_info$group <- as.factor(sample_info$group)
+trait_data <- sample_info[c("group")]
+moduleTraitCor <- cor(MEs, trait_data, use = "pairwise.complete.obs")
+moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, nSamples = nrow(MEs))
+
+# Step 10: Plot Module-Trait Heatmap
+pdf("module_trait_heatmap.pdf", width = 8, height = 12)
+labeledHeatmap(Matrix = moduleTraitCor, xLabels = colnames(trait_data), yLabels = rownames(moduleTraitCor),
+               main = "Module-Trait Relationships", colorLabels = FALSE)
+dev.off()
+
+# Step 11: Save Eigengene Distance Heatmap
+eigengeneDist <- 1 - cor(MEs)
+png("eigengene_distance_heatmap.png", width = 1200, height = 1000)
+heatmap.2(eigengeneDist, trace = "none", dendrogram = "both", col = colorRampPalette(c("red", "white", "blue"))(100),
+          main = "Eigengene Distance Heatmap")
+dev.off()
+
+cat("✅ WGCNA analysis completed successfully.\n")
