@@ -41,3 +41,39 @@ pheatmap(expr_top_genes_scaled,
 dev.off()
 
 cat("Heatmap plot saved as 'heatmap_plot.png'\n")
+
+
+
+# Load required libraries for UpSet plot
+library(UpSetR)
+
+# Prepare data for UpSet plot (gene presence across datasets)
+all_genes <- unique(unlist(lapply(expr_list, rownames)))  # All unique genes
+gene_presence <- data.frame(Gene = all_genes, stringsAsFactors = FALSE)
+
+# Add presence/absence data for each dataset
+for (study_name in names(expr_list)) {
+  gene_presence[[study_name]] <- ifelse(gene_presence$Gene %in% rownames(expr_list[[study_name]]), 1, 0)
+}
+
+# Set 'Gene' as rownames and remove the 'Gene' column
+rownames(gene_presence) <- gene_presence$Gene
+gene_presence$Gene <- NULL
+
+# Create the UpSet plot
+upset_plot <- upset(gene_presence, 
+                    sets = names(expr_list),
+                    order.by = "freq", 
+                    mainbar.y.label = "Number of Genes in Intersection",
+                    sets.x.label = "Number of Genes per Study")
+
+# Save UpSet plot as PNG
+png("upset_plot.png", width = 1500, height = 1000, res = 150)
+upset(gene_presence,
+      sets = names(expr_list),
+      order.by = "freq",
+      mainbar.y.label = "Number of Genes in Intersection",
+      sets.x.label = "Number of Genes per Study")
+dev.off()
+
+cat("UpSet plot saved to 'upset_plot.png'.\n")
