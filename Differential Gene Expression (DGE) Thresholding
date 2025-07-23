@@ -1,0 +1,39 @@
+# Load Necessary Libraries for Plotting
+library(ggplot2)
+library(ggrepel)
+
+# Set thresholds for differential expression analysis
+logfc_cutoff <- 2
+padj_cutoff <- 0.05
+
+# Categorize genes by significance based on logFC and adjusted p-value
+top_table$Sig <- "NS"
+top_table$Sig[top_table$logFC > logfc_cutoff & top_table$adj.P.Val < padj_cutoff] <- "Up"
+top_table$Sig[top_table$logFC < -logfc_cutoff & top_table$adj.P.Val < padj_cutoff] <- "Down"
+
+# Assign colors based on significance (Up, Down, or Not Significant)
+top_table$Color <- "gray"
+top_table$Color[top_table$Sig == "Up"] <- "red"
+top_table$Color[top_table$Sig == "Down"] <- "blue"
+
+# Add -log10 of adjusted p-value for plotting
+top_table$negLog10FDR <- -log10(top_table$adj.P.Val)
+
+# Select top 10 upregulated and downregulated genes for labeling
+top_up <- head(top_table[order(-top_table$logFC), ], 10)
+top_down <- head(top_table[order(top_table$logFC), ], 10)
+
+# Label top 10 genes
+top_table$Label <- ""
+top_table$Label[rownames(top_table) %in% rownames(top_up)] <- rownames(top_up)
+top_table$Label[rownames(top_table) %in% rownames(top_down)] <- rownames(top_down)
+
+# Create a volcano plot
+ggplot(top_table, aes(x = logFC, y = negLog10FDR, color = Color, label = Label)) +
+  geom_point() +
+  scale_color_identity() +
+  theme_minimal() +
+  geom_text_repel() +
+  labs(title = "Volcano Plot of Differential Gene Expression",
+       x = "Log2 Fold Change", y = "-log10 FDR") +
+  theme(legend.position = "none")
