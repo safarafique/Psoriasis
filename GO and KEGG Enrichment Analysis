@@ -1,0 +1,86 @@
+# Load necessary libraries
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+library(ggplot2)
+
+# Assuming `yellowgreen_df` contains gene lists for significant modules
+combined_genes <- unique(unlist(yellowgreen_df))  # Combine all genes from modules
+
+# Convert gene symbols to ENTREZ IDs
+entrez_genes <- bitr(combined_genes, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+
+# Check if conversion was successful
+if (nrow(entrez_genes) == 0) {
+  stop("No valid ENTREZ IDs found for the combined gene list.")
+}
+
+# Perform GO enrichment analysis for Biological Process (BP)
+go_enrichment_BP <- enrichGO(gene = entrez_genes$ENTREZID, OrgDb = org.Hs.eg.db, ont = "BP", pAdjustMethod = "BH", pvalueCutoff = 0.1, qvalueCutoff = 0.1)
+go_enrichment_MF <- enrichGO(gene = entrez_genes$ENTREZID, OrgDb = org.Hs.eg.db, ont = "MF", pAdjustMethod = "BH", pvalueCutoff = 0.1, qvalueCutoff = 0.1)
+go_enrichment_CC <- enrichGO(gene = entrez_genes$ENTREZID, OrgDb = org.Hs.eg.db, ont = "CC", pAdjustMethod = "BH", pvalueCutoff = 0.1, qvalueCutoff = 0.1)
+
+# Custom function to plot GO enrichment
+plot_go_enrichment <- function(go_enrichment, title, output_file) {
+  if (nrow(as.data.frame(go_enrichment)) > 0) {
+    p <- dotplot(go_enrichment, showCategory = 20, x = "GeneRatio", color = "p.adjust", size = "Count") +
+      scale_color_gradient(low = "#FF6347", high = "#4682B4") +
+      theme_minimal() + ggtitle(title)
+    ggsave(output_file, plot = p, width = 12, height = 8)
+  } else {
+    cat(paste("No significant GO terms found for", title, "\n"))
+  }
+}
+
+# Generate and save GO enrichment plots
+plot_go_enrichment(go_enrichment_BP, "GO Enrichment (Biological Process)", "GO_Enrichment_BP.png")
+plot_go_enrichment(go_enrichment_MF, "GO Enrichment (Molecular Function)", "GO_Enrichment_MF.png")
+plot_go_enrichment(go_enrichment_CC, "GO Enrichment (Cellular Component)", "GO_Enrichment_CC.png")
+############################################################################################################################
+
+# Load necessary libraries for KEGG
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(KEGGREST)
+library(circlize)
+library(RColorBrewer)
+
+# Convert gene symbols to ENTREZ IDs (for KEGG analysis)
+entrez_genes <- bitr(combined_genes, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+
+# Perform KEGG enrichment analysis
+kegg_enrichment <- enrichKEGG(gene = entrez_genes$ENTREZID, organism = "hsa", pvalueCutoff = 0.05)
+
+# Extract top KEGG pathways
+kegg_pathways <- as.data.frame(kegg_enrichment)
+top_pathways <- head(kegg_pathways, 10)
+
+# Extract associated genes for the top pathways
+genes_kegg <- top_pathways$geneID
+gene_lists <- strsplit(genes_kegg, "/")
+
+# Prepare matrix for the Chord plot
+pathway_genes <- data.frame(Pathway = rep(top_pathways$Description, sapply(gene_lists, length)),
+                            Gene = unlist(gene_lists))
+
+# Convert ENTREZ IDs to gene symbols for plotting
+gene_symbols <- bitr(unlist(gene_lists), fromType = "ENTREZID", toType = "SYMBOL", OrgDb = org.Hs.eg.db)
+
+# Merge pathway genes with gene symbols
+pathway_genes_merged <- merge(pathway_genes, gene_symbols, by.x = "Gene", by.y = "ENTREZID", all.x = TRUE)
+pathway_genes <- pathway_genes_merged[!is.na(pathway_genes_merged$SYMBOL), ]
+
+# Prepare color assignments for pathways and genes
+unique_pathways <- unique(pathway_genes$Pathway)
+pathway_colors <- setNames(colorRampPalette(brewer.pal(9, "Blues"))(length(unique_pathways)), unique_pathways)
+
+# Plot chord diagram
+chord_data <- data.frame(Pathway = pathway_genes_merged$Pathway, Gene = pathway_genes_merged$SYMBOL)
+
+# Plot the chord diagram
+png("Chord_KEGG_Gene_Plot.png", width = 1800, height = 1800, res = 300)
+circos.clear()
+chordDiagram(x = chord_data, annotationTrack = "grid", grid.col = pathway_colors, transparency = 0.1)
+dev.off()
+
+cat("Chord plot saved as 'Chord_KEGG_Gene_Plot.png'.\n")
