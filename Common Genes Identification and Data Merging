@@ -1,0 +1,30 @@
+# Check if we have at least two datasets to merge
+if (length(expr_list) < 2) {
+  stop("Not enough datasets available for batch effect removal.")
+}
+
+# Find common genes across all datasets
+common_genes <- Reduce(intersect, lapply(expr_list, rownames))
+
+# Ensure that common_genes is not empty
+if (length(common_genes) == 0) {
+  stop("No common genes found across datasets.")
+}
+
+cat("Number of common genes found:", length(common_genes), "\n")
+
+# Subset each dataset to include only common genes
+expr_list_common <- lapply(expr_list, function(expr_matrix) {
+  expr_matrix[common_genes, , drop = FALSE]
+})
+
+# Combine expression data from all datasets
+expr_combined <- do.call(cbind, expr_list_common)
+
+# Perform log2 transformation if necessary
+expr_combined_log <- log2(expr_combined + 1)
+
+# Print combined expression data size
+cat("Combined expression data size:", dim(expr_combined_log), "\n")
+
+# The combined dataset is now ready for further analysis (e.g., batch effect removal, PCA, differential expression)
